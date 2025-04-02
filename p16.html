@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>P16 Label Generator</title>
+  <style>
+    body {
+      font-family: Verdana, sans-serif;
+      margin: 20px;
+    }
+    /* Print media: hide non-printable elements */
+    @media print {
+      .no-print,
+      .stereo-controls,
+      .fill-controls,
+      .tag-controls,
+      .both-controls,
+      .strip-buttons {
+        display: none !important;
+      }
+    }
+    /* Container for all strips */
+    #strips-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #state-controls {
+      margin-bottom: 40px;
+    }
+    /* Each strip: contains 4 groups arranged in a row, plus control buttons below */
+    .strip {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 4px;
+    }
+    /* The channel strip area – only the channel boxes */
+    .strip-box-area { }
+    /* Groups container: 4 groups in one row */
+    .groups {
+      display: flex;
+      gap: 3mm;
+    }
+    /* Each group: vertical layout with stereo toggles, boxes, and three rows of color controls */
+    .group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    /* Stereo controls: two toggles for the two pairs; centered above boxes */
+    .stereo-controls {
+      display: flex;
+      justify-content: space-between;
+      width: calc(2 * 13mm * 2);
+    }
+    .stereo-toggle {
+      cursor: pointer;
+      text-align: center;
+      flex: 1;
+      border: 1px solid #ccc;
+      padding: 1px 0;
+      background: #f7f7f7;
+      font-size: 8pt;
+    }
+    /* Channel boxes */
+    .strip-boxes { }
+    .boxes {
+      display: flex;
+    }
+    .box {
+      width: 13mm;
+      height: 18mm;
+      border: 1px solid #ccc;
+      padding: 1mm;
+      box-sizing: border-box;
+      font-size: 8pt;
+      font-weight: bold;
+      text-align: center;
+      overflow: hidden;
+    }
+    .box:not(:first-child) {
+      border-left: none;
+    }
+    .box.double {
+      width: 26mm;
+    }
+    /* Color control rows: gap removed */
+    .fill-controls, .tag-controls, .both-controls {
+      display: flex;
+      gap: 0;
+    }
+    /* Palette container wraps a color button and its palette */
+    .palette-container {
+      position: relative;
+      width: 13mm;
+    }
+    /* The buttons now show the text "Fill", "Tag", or "Both" */
+    .fill-btn, .tag-btn, .both-btn {
+      width: 100%;
+      height: 5mm;
+      border: 1px solid #ccc;
+      background: #f7f7f7;
+      cursor: pointer;
+      font-size: 8pt;
+      text-align: center;
+      padding: 0;
+    }
+    /* Color palette popup (grid of swatches) */
+    .color-palette {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 2px;
+      display: none;
+      grid-template-columns: repeat(4, 15px);
+      gap: 2px;
+      z-index: 10;
+    }
+    .color-palette.show {
+      display: grid;
+    }
+    .color-swatch {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 6px;
+    }
+    /* Buttons below each strip */
+    .strip-buttons {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .strip-button {
+      padding: 2px 6px;
+      font-size: 10pt;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #eee;
+    }
+    /* EDIT button active state: orange background */
+    .strip-button.edit-btn.active {
+      background: orange;
+    }
+    /* Non-printable sections */
+    .no-print { }
+    /* State controls styling */
+    .state-inputs {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+    .state-message {
+      font-size: 12px;
+      color: #666;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out;
+      display: block;
+      margin-top: 4px;
+      min-height: 16px;
+    }
+    .state-message.success {
+      opacity: 1;
+      color: #2e7d32;
+    }
+    .state-message.error {
+      opacity: 1;
+      color: #c62828;
+    }
+    .danger {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .danger:hover {
+      background-color: #c82333;
+    }
+    .state-info {
+      font-size: 11px;
+      color: #666;
+      margin-top: 2px;
+    }
+    .char-count {
+      font-size: 11px;
+      color: #666;
+      margin-left: 4px;
+    }
+    .char-count.warning {
+      color: #f57c00;
+    }
+    .char-count.error {
+      color: #c62828;
+    }
+    .help-button {
+      background: none;
+      border: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      margin-left: auto;
+    }
+    .help-button:hover {
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <h1>P16 Label Generator</h1>
+    <section class="instructions">
+      <p>
+        Edit each channel's text and choose colors using the three buttons below each group:
+        "Fill" sets the background,
+        "Tag" sets a bottom border,
+        and "Both" applies both using corresponding colors.
+        Click stereo toggles (MONO/L/R) to merge channel pairs.
+        DUPLICATE clones a strip, preserving all settings.
+        EDIT toggles the visibility of all channel controls.
+        RESET clears the strip of content and colors.
+        Print in landscape at 100% scale; all controls are hidden in print view.
+      </p>
+    </section>
+  </div>
+  <div id="state-controls" class="no-print">
+    <h3>Save / Load State</h3>
+    <h5>Save the current state in your browser's local storage, or load a saved state.</h5>
+    <div class="state-inputs">
+      <div style="display: flex; align-items: center;">
+        <input type="text" id="stateName" placeholder="Enter state name" maxlength="50">
+        <span id="charCount" class="char-count">0/50</span>
+      </div>
+      <button id="saveState">Save State</button>
+      <button id="saveAsState">Save As...</button>
+      <select id="loadStateDropdown">
+        <option value="">Select a state to load...</option>
+      </select>
+      <button id="deleteState" class="danger">Delete Selected</button>
+      <button id="clearAllStates" class="danger">Clear All States</button>
+      <button id="helpButton" class="help-button">Help (?)</button>
+    </div>
+    <div id="stateMessage" class="state-message"></div>
+    <div id="stateInfo" class="state-info"></div>
+  </div>
+  <div id="strips-container">
+    <!-- Initial Strip -->
+    <div class="strip">
+      <div class="strip-box-area">
+        <div class="groups">
+          <!-- Group 1: Channels 1-4 -->
+          <div class="group">
+            <div class="stereo-controls">
+              <div class="stereo-toggle" data-pair="0">MONO</div>
+              <div class="stereo-toggle" data-pair="1">MONO</div>
+            </div>
+            <div class="strip-boxes">
+              <div class="boxes">
+                <div class="box" contenteditable="true">Ch 1</div>
+                <div class="box" contenteditable="true">Ch 2</div>
+                <div class="box" contenteditable="true">Ch 3</div>
+                <div class="box" contenteditable="true">Ch 4</div>
+              </div>
+            </div>
+            <div class="fill-controls">
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="0">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="1">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="2">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="3">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="tag-controls">
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="0">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="1">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="2">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="3">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="both-controls">
+              <div class="palette-container">
+                <button class="both-btn" data-channel="0">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="1">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="2">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="3">Both</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Group 2: Channels 5-8 -->
+          <div class="group">
+            <div class="stereo-controls">
+              <div class="stereo-toggle" data-pair="0">MONO</div>
+              <div class="stereo-toggle" data-pair="1">MONO</div>
+            </div>
+            <div class="strip-boxes">
+              <div class="boxes">
+                <div class="box" contenteditable="true">Ch 5</div>
+                <div class="box" contenteditable="true">Ch 6</div>
+                <div class="box" contenteditable="true">Ch 7</div>
+                <div class="box" contenteditable="true">Ch 8</div>
+              </div>
+            </div>
+            <div class="fill-controls">
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="0">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="1">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="2">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="3">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="tag-controls">
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="0">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="1">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="2">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="3">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="both-controls">
+              <div class="palette-container">
+                <button class="both-btn" data-channel="0">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="1">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="2">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="3">Both</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Group 3: Channels 9-12 -->
+          <div class="group">
+            <div class="stereo-controls">
+              <div class="stereo-toggle" data-pair="0">MONO</div>
+              <div class="stereo-toggle" data-pair="1">MONO</div>
+            </div>
+            <div class="strip-boxes">
+              <div class="boxes">
+                <div class="box" contenteditable="true">Ch 9</div>
+                <div class="box" contenteditable="true">Ch 10</div>
+                <div class="box" contenteditable="true">Ch 11</div>
+                <div class="box" contenteditable="true">Ch 12</div>
+              </div>
+            </div>
+            <div class="fill-controls">
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="0">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="1">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="2">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="3">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="tag-controls">
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="0">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="1">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="2">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="3">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="both-controls">
+              <div class="palette-container">
+                <button class="both-btn" data-channel="0">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="1">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="2">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="3">Both</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Group 4: Channels 13-16 -->
+          <div class="group">
+            <div class="stereo-controls">
+              <div class="stereo-toggle" data-pair="0">MONO</div>
+              <div class="stereo-toggle" data-pair="1">MONO</div>
+            </div>
+            <div class="strip-boxes">
+              <div class="boxes">
+                <div class="box" contenteditable="true">Ch 13</div>
+                <div class="box" contenteditable="true">Ch 14</div>
+                <div class="box" contenteditable="true">Ch 15</div>
+                <div class="box" contenteditable="true">Ch 16</div>
+              </div>
+            </div>
+            <div class="fill-controls">
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="0">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="1">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="2">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="fill-btn" data-channel="3">Fill</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="tag-controls">
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="0">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="1">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="2">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="tag-btn" data-channel="3">Tag</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+            <div class="both-controls">
+              <div class="palette-container">
+                <button class="both-btn" data-channel="0">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="1">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="2">Both</button>
+                <div class="color-palette"></div>
+              </div>
+              <div class="palette-container">
+                <button class="both-btn" data-channel="3">Both</button>
+                <div class="color-palette"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="strip-buttons no-print">
+        <div class="strip-button duplicate-btn">DUPLICATE</div>
+        <div class="strip-button edit-btn">EDIT</div>
+        <div class="strip-button reset-btn">RESET</div>
+        <!-- REMOVE button will be added to duplicates -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+
+    // Show a message to the user
+    function showMessage(message, isError = false) {
+      const messageDiv = document.getElementById("stateMessage");
+      messageDiv.textContent = message;
+      messageDiv.className = "state-message " + (isError ? "error" : "success");
+      setTimeout(() => {
+        messageDiv.className = "state-message";
+      }, 3000);
+    }
+
+    // Update character count
+    document.getElementById("stateName").addEventListener("input", function() {
+      const count = this.value.length;
+      const charCount = document.getElementById("charCount");
+      charCount.textContent = `${count}/50`;
+      charCount.className = "char-count" + 
+        (count > 45 ? " error" : count > 40 ? " warning" : "");
+    });
+
+    // Save As functionality
+    document.getElementById("saveAsState").addEventListener("click", function() {
+      const selectedName = document.getElementById("loadStateDropdown").value;
+      if (!selectedName) {
+        showMessage("Please select a state to save as.", true);
+        return;
+      }
+      document.getElementById("stateName").value = selectedName + " (Copy)";
+      document.getElementById("saveState").click();
+    });
+
+    // Clear all states
+    document.getElementById("clearAllStates").addEventListener("click", function() {
+      if (!confirm("Are you sure you want to delete all saved states? This cannot be undone.")) {
+        return;
+      }
+      try {
+        localStorage.removeItem("p16States");
+        updateStateDropdown();
+        showMessage("All states cleared successfully.");
+      } catch (e) {
+        showMessage("Error clearing states: " + e.message, true);
+      }
+    });
+
+    // Help button
+    document.getElementById("helpButton").addEventListener("click", function() {
+      const shortcuts = [
+        "Ctrl/Cmd + S: Save current state",
+        "Ctrl/Cmd + Z: Undo last action",
+        "Ctrl/Cmd + Y: Redo last action",
+        "Ctrl/Cmd + D: Duplicate current strip",
+        "Ctrl/Cmd + E: Toggle edit mode",
+        "Ctrl/Cmd + R: Reset current strip",
+        "Esc: Close color palette"
+      ].join("\n");
+      alert("Keyboard Shortcuts:\n\n" + shortcuts);
+    });
+
+    // Add more keyboard shortcuts
+    document.addEventListener("keydown", function(e) {
+      // Ctrl/Cmd + S to save state
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        document.getElementById("saveState").click();
+      }
+      
+      // Ctrl/Cmd + D to duplicate strip
+      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+        e.preventDefault();
+        const activeStrip = document.querySelector(".strip");
+        if (activeStrip) {
+          activeStrip.querySelector(".duplicate-btn").click();
+        }
+      }
+      
+      // Ctrl/Cmd + E to toggle edit mode
+      if ((e.ctrlKey || e.metaKey) && e.key === "e") {
+        e.preventDefault();
+        const activeStrip = document.querySelector(".strip");
+        if (activeStrip) {
+          activeStrip.querySelector(".edit-btn").click();
+        }
+      }
+      
+      // Ctrl/Cmd + R to reset strip
+      if ((e.ctrlKey || e.metaKey) && e.key === "r") {
+        e.preventDefault();
+        const activeStrip = document.querySelector(".strip");
+        if (activeStrip) {
+          activeStrip.querySelector(".reset-btn").click();
+        }
+      }
+      
+      // Esc to close color palette
+      if (e.key === "Escape") {
+        document.querySelectorAll(".color-palette.show").forEach(palette => {
+          palette.classList.remove("show");
+        });
+      }
+    });
+
+    // Update state info
+    function updateStateInfo() {
+      const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+      const count = Object.keys(states).filter(name => name !== "__autosave").length;
+      const infoDiv = document.getElementById("stateInfo");
+      infoDiv.textContent = `${count} state${count !== 1 ? 's' : ''} saved`;
+    }
+
+    // Call updateStateInfo when states change
+    const originalUpdateStateDropdown = updateStateDropdown;
+    updateStateDropdown = function() {
+      originalUpdateStateDropdown();
+      updateStateInfo();
+    };
+
+    // Initialize state info
+    updateStateInfo();
+
+    // Autosave functionality
+    let autosaveTimeout;
+    const AUTOSAVE_DELAY = 1000; // 1 second delay after changes
+
+    function autosave() {
+      clearTimeout(autosaveTimeout);
+      autosaveTimeout = setTimeout(() => {
+        try {
+          const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+          states["__autosave"] = {
+            html: document.getElementById("strips-container").innerHTML,
+            timestamp: new Date().toISOString()
+          };
+          localStorage.setItem("p16States", JSON.stringify(states));
+        } catch (e) {
+          console.error("Autosave failed:", e);
+        }
+      }, AUTOSAVE_DELAY);
+    }
+
+    // Function to update the state dropdown
+    function updateStateDropdown() {
+      const dropdown = document.getElementById("loadStateDropdown");
+      const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+      
+      // Clear existing options except the first one
+      while (dropdown.options.length > 1) {
+        dropdown.remove(1);
+      }
+      
+      // Add options for each saved state, excluding autosave
+      Object.entries(states).forEach(([name, data]) => {
+        if (name !== "__autosave") {
+          const option = document.createElement("option");
+          option.value = name;
+          const date = new Date(data.timestamp);
+          option.textContent = `${name} (${date.toLocaleString()})`;
+          dropdown.appendChild(option);
+        }
+      });
+    }
+
+    // Load autosave on page load if it exists
+    function loadAutosave() {
+      try {
+        const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+        const autosave = states["__autosave"];
+        
+        if (autosave) {
+          const messageDiv = document.getElementById("stateMessage");
+          messageDiv.innerHTML = 'Autosave found, <a href="#" id="restoreAutosave" style="color: #2e7d32; text-decoration: underline;">restore it</a>?';
+          messageDiv.className = "state-message";
+          messageDiv.style.opacity = "1";
+          
+          document.getElementById("restoreAutosave").addEventListener("click", function(e) {
+            e.preventDefault();
+            const container = document.getElementById("strips-container");
+            container.innerHTML = autosave.html;
+            container.querySelectorAll(".strip").forEach(strip => {
+              initStrip(strip);
+              setupStripButtons(strip);
+            });
+            showMessage("Autosaved state restored successfully.");
+          });
+        }
+      } catch (e) {
+        console.error("Error loading autosave:", e);
+      }
+    }
+
+    // Add event listeners for changes that should trigger autosave
+    function setupAutosaveListeners() {
+      // Listen for text changes in boxes
+      document.addEventListener('input', function(e) {
+        if (e.target.classList.contains('box')) {
+          autosave();
+        }
+      });
+
+      // Listen for color changes
+      document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('color-swatch')) {
+          autosave();
+        }
+      });
+
+      // Listen for stereo toggle changes
+      document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('stereo-toggle')) {
+          autosave();
+        }
+      });
+
+      // Listen for strip additions/removals
+      const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          if (mutation.type === 'childList') {
+            autosave();
+          }
+        });
+      });
+
+      observer.observe(document.getElementById('strips-container'), {
+        childList: true,
+        subtree: true
+      });
+    }
+
+    // Initialize autosave functionality
+    setupAutosaveListeners();
+    loadAutosave();
+
+    // Save state with a given name
+    document.getElementById("saveState").addEventListener("click", function() {
+      const name = document.getElementById("stateName").value.trim();
+      if (!name) {
+        showMessage("Please enter a state name.", true);
+        return;
+      }
+      
+      try {
+        // Get existing states or initialize empty object
+        const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+        
+        // Save new state with timestamp
+        states[name] = {
+          html: document.getElementById("strips-container").innerHTML,
+          timestamp: new Date().toISOString()
+        };
+        
+        localStorage.setItem("p16States", JSON.stringify(states));
+        
+        // Update dropdown
+        updateStateDropdown();
+        
+        // Clear input
+        document.getElementById("stateName").value = "";
+        showMessage("State '" + name + "' saved successfully.");
+      } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+          showMessage("Storage quota exceeded. Please delete some states first.", true);
+        } else {
+          showMessage("Error saving state: " + e.message, true);
+        }
+      }
+    });
+
+    // Load state when dropdown selection changes
+    document.getElementById("loadStateDropdown").addEventListener("change", function() {
+      const selectedName = this.value;
+      if (!selectedName) return;
+      
+      if (!confirm("Loading a state will replace your current work. Continue?")) {
+        this.value = ""; // Reset dropdown
+        return;
+      }
+      
+      try {
+        const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+        const saved = states[selectedName];
+        
+        if (saved) {
+          const container = document.getElementById("strips-container");
+          container.innerHTML = saved.html;
+          // Reinitialize all the controls on the loaded content
+          container.querySelectorAll(".strip").forEach(strip => {
+            initStrip(strip);
+            setupStripButtons(strip);
+          });
+          showMessage("State '" + selectedName + "' loaded successfully.");
+        } else {
+          showMessage("No saved state found with that name.", true);
+        }
+      } catch (e) {
+        showMessage("Error loading state: " + e.message, true);
+      }
+    });
+
+    // Delete selected state
+    document.getElementById("deleteState").addEventListener("click", function() {
+      const selectedName = document.getElementById("loadStateDropdown").value;
+      if (!selectedName) {
+        showMessage("Please select a state to delete.", true);
+        return;
+      }
+      
+      if (!confirm("Are you sure you want to delete state '" + selectedName + "'?")) {
+        return;
+      }
+      
+      try {
+        const states = JSON.parse(localStorage.getItem("p16States") || "{}");
+        delete states[selectedName];
+        localStorage.setItem("p16States", JSON.stringify(states));
+        updateStateDropdown();
+        showMessage("State '" + selectedName + "' deleted successfully.");
+      } catch (e) {
+        showMessage("Error deleting state: " + e.message, true);
+      }
+    });
+
+    // Initialize dropdown on page load
+    updateStateDropdown();
+
+    // Define fill and tag color arrays (parallel arrays)
+    const fillColors = [
+      "#FFCCCC", "#FFE6CC", "#FFFFCC", "#EEFFCC",
+      "#CCFFCC", "#CCFFE6", "#CCFFFF", "#CCE6FF",
+      "#CCCCFF", "#E6CCFF", "#FFCCFF", "#FFE6FF",
+      "#F7F7F7", "#FFDAB9", "#FFFACD", "#E0FFFF"
+    ];
+    const tagColors = [
+      "#CC6666", "#CC9966", "#CCCC66", "#99CC66",
+      "#66CC66", "#66CC99", "#66CCCC", "#6699CC",
+      "#6666CC", "#9966CC", "#CC66CC", "#CC6699",
+      "#999999", "#D2A679", "#CCCC99", "#66A3A3"
+    ];
+
+    // Helper: Create a "None" swatch element
+    function createNoneSwatch(callback) {
+      const noneSwatch = document.createElement('div');
+      noneSwatch.classList.add('color-swatch');
+      noneSwatch.textContent = "None";
+      noneSwatch.style.fontSize = "6px";
+      noneSwatch.style.display = "flex";
+      noneSwatch.style.alignItems = "center";
+      noneSwatch.style.justifyContent = "center";
+      noneSwatch.style.backgroundColor = "#fff";
+      noneSwatch.style.border = "1px dashed #ccc";
+      noneSwatch.onclick = function(e) {
+        callback(null);
+        e.stopPropagation();
+      };
+      return noneSwatch;
+    }
+
+    // Determine contrasting text color for fill (black/white)
+    function getContrastYIQ(hexcolor) {
+      hexcolor = hexcolor.replace("#", "");
+      const r = parseInt(hexcolor.substr(0,2),16);
+      const g = parseInt(hexcolor.substr(2,2),16);
+      const b = parseInt(hexcolor.substr(4,2),16);
+      const yiq = ((r*299)+(g*587)+(b*114))/1000;
+      return (yiq >= 128) ? "#000000" : "#FFFFFF";
+    }
+
+    // Toggle visibility of controls within a strip via the EDIT button.
+    function setEditState(strip, active) {
+      const controls = strip.querySelectorAll('.stereo-controls, .fill-controls, .tag-controls, .both-controls');
+      controls.forEach(ctrl => {
+        ctrl.style.display = active ? "flex" : "none";
+      });
+      const editBtn = strip.querySelector('.edit-btn');
+      if (active) {
+        editBtn.classList.add('active');
+      } else {
+        editBtn.classList.remove('active');
+      }
+    }
+
+    // Reset a strip to a blank state (clear text and all color settings)
+    function resetStrip(strip) {
+      strip.querySelectorAll('.group').forEach(group => {
+        group.querySelectorAll('.box').forEach(box => {
+          box.textContent = "";
+          box.style.backgroundColor = "";
+          box.style.color = "";
+          box.style.borderBottom = "";
+          box.classList.remove('double');
+          box.style.display = "block";
+        });
+        group.querySelectorAll('.stereo-toggle').forEach(toggle => {
+          toggle.textContent = "MONO";
+        });
+      });
+    }
+
+    // Initialize controls for a given strip element
+    function initStrip(strip) {
+      strip.querySelectorAll('.group').forEach(group => {
+        const boxes = group.querySelectorAll('.box');
+        // Stereo toggles
+        group.querySelectorAll('.stereo-toggle').forEach(toggle => {
+          toggle.onclick = function() {
+            const pair = this.getAttribute('data-pair');
+            const index = (pair === "0") ? 0 : 2;
+            if (this.textContent.trim() === "MONO") {
+              this.textContent = "L/R";
+              boxes[index].classList.add('double');
+              boxes[index+1].style.display = 'none';
+            } else {
+              this.textContent = "MONO";
+              boxes[index].classList.remove('double');
+              boxes[index+1].style.display = 'block';
+            }
+          };
+        });
+        // Fill controls: set fill color (background and text)
+        group.querySelectorAll('.fill-controls .fill-btn').forEach(btn => {
+          const palette = btn.parentElement.querySelector('.color-palette');
+          palette.innerHTML = "";
+          palette.appendChild(createNoneSwatch(function() {
+            const channelIndex = btn.getAttribute('data-channel');
+            const box = group.querySelectorAll('.box')[channelIndex];
+            box.style.backgroundColor = "";
+            box.style.color = "";
+          }));
+          fillColors.forEach(color => {
+            const swatch = document.createElement('div');
+            swatch.classList.add('color-swatch');
+            swatch.style.backgroundColor = color;
+            swatch.onclick = function(e) {
+              const channelIndex = btn.getAttribute('data-channel');
+              const box = group.querySelectorAll('.box')[channelIndex];
+              box.style.backgroundColor = color;
+              box.style.color = getContrastYIQ(color);
+              palette.classList.remove('show');
+              e.stopPropagation();
+            };
+            palette.appendChild(swatch);
+          });
+          btn.onclick = function(e) {
+            palette.classList.toggle('show');
+            e.stopPropagation();
+          };
+        });
+        // Tag controls: set bottom border color (2mm)
+        group.querySelectorAll('.tag-controls .tag-btn').forEach(btn => {
+          const palette = btn.parentElement.querySelector('.color-palette');
+          palette.innerHTML = "";
+          palette.appendChild(createNoneSwatch(function() {
+            const channelIndex = btn.getAttribute('data-channel');
+            const box = group.querySelectorAll('.box')[channelIndex];
+            box.style.borderBottom = "";
+          }));
+          tagColors.forEach(color => {
+            const swatch = document.createElement('div');
+            swatch.classList.add('color-swatch');
+            swatch.style.backgroundColor = color;
+            swatch.onclick = function(e) {
+              const channelIndex = btn.getAttribute('data-channel');
+              const box = group.querySelectorAll('.box')[channelIndex];
+              box.style.borderBottom = "2mm solid " + color;
+              palette.classList.remove('show');
+              e.stopPropagation();
+            };
+            palette.appendChild(swatch);
+          });
+          btn.onclick = function(e) {
+            palette.classList.toggle('show');
+            e.stopPropagation();
+          };
+        });
+        // Both controls: set both fill and tag using corresponding arrays
+        group.querySelectorAll('.both-controls .both-btn').forEach(btn => {
+          const palette = btn.parentElement.querySelector('.color-palette');
+          palette.innerHTML = "";
+          palette.appendChild(createNoneSwatch(function() {
+            const channelIndex = btn.getAttribute('data-channel');
+            const box = group.querySelectorAll('.box')[channelIndex];
+            box.style.backgroundColor = "";
+            box.style.color = "";
+            box.style.borderBottom = "";
+          }));
+          fillColors.forEach((fillColor, idx) => {
+            const tagColor = tagColors[idx];
+            const swatch = document.createElement('div');
+            swatch.classList.add('color-swatch');
+            swatch.style.backgroundColor = fillColor;
+            swatch.onclick = function(e) {
+              const channelIndex = btn.getAttribute('data-channel');
+              const box = group.querySelectorAll('.box')[channelIndex];
+              box.style.backgroundColor = fillColor;
+              box.style.color = getContrastYIQ(fillColor);
+              box.style.borderBottom = "2mm solid " + tagColor;
+              palette.classList.remove('show');
+              e.stopPropagation();
+            };
+            palette.appendChild(swatch);
+          });
+          btn.onclick = function(e) {
+            palette.classList.toggle('show');
+            e.stopPropagation();
+          };
+        });
+      });
+    }
+
+    // Hide all palettes when clicking outside
+    document.addEventListener('click', function() {
+      document.querySelectorAll('.color-palette').forEach(palette => {
+        palette.classList.remove('show');
+      });
+    });
+
+    // Initialize the initial strip
+    const stripsContainer = document.getElementById('strips-container');
+    const initialStrip = document.querySelector('.strip');
+    initStrip(initialStrip);
+
+    // Toggle controls for a strip via the EDIT button:
+    function setEditState(strip, active) {
+      const controls = strip.querySelectorAll('.stereo-controls, .fill-controls, .tag-controls, .both-controls');
+      controls.forEach(ctrl => {
+        ctrl.style.display = active ? "flex" : "none";
+      });
+      const editBtn = strip.querySelector('.edit-btn');
+      if (active) {
+        editBtn.classList.add('active');
+      } else {
+        editBtn.classList.remove('active');
+      }
+    }
+
+    // Reset a strip to a blank state
+    function resetStrip(strip) {
+      strip.querySelectorAll('.group').forEach(group => {
+        group.querySelectorAll('.box').forEach(box => {
+          box.textContent = "";
+          box.style.backgroundColor = "";
+          box.style.color = "";
+          box.style.borderBottom = "";
+          box.classList.remove('double');
+          box.style.display = "block";
+        });
+        group.querySelectorAll('.stereo-toggle').forEach(toggle => {
+          toggle.textContent = "MONO";
+        });
+      });
+    }
+
+    // Initially, set the initial strip to active edit state and duplicates to inactive.
+    setEditState(initialStrip, true);
+
+    // Event delegation for duplicate, remove, edit, and reset buttons
+    document.getElementById('strips-container').addEventListener('click', function(e) {
+      if (e.target.classList.contains('duplicate-btn')) {
+        const currentStrip = e.target.closest('.strip');
+        const newStrip = currentStrip.cloneNode(true);
+        // Reinitialize controls on the new strip (preserving text and inline styles)
+        initStrip(newStrip);
+        // Set the new duplicate to inactive (controls hidden)
+        setEditState(newStrip, false);
+        // Ensure a REMOVE button is added if not already present
+        const btnContainer = newStrip.querySelector('.strip-buttons');
+        if (!newStrip.querySelector('.remove-strip')) {
+          const removeBtn = document.createElement('div');
+          removeBtn.textContent = "REMOVE";
+          removeBtn.classList.add('strip-button', 'remove-strip', 'no-print');
+          btnContainer.appendChild(removeBtn);
+        }
+        // Insert the new strip immediately below the current one
+        stripsContainer.insertBefore(newStrip, currentStrip.nextSibling);
+      }
+      if (e.target.classList.contains('remove-strip')) {
+        const stripToRemove = e.target.closest('.strip');
+        stripToRemove.remove();
+      }
+      if (e.target.classList.contains('edit-btn')) {
+        const strip = e.target.closest('.strip');
+        const currentState = strip.querySelector('.stereo-controls').style.display;
+        if (currentState === "none" || currentState === "") {
+          setEditState(strip, true);
+        } else {
+          setEditState(strip, false);
+        }
+      }
+      if (e.target.classList.contains('reset-btn')) {
+        const strip = e.target.closest('.strip');
+        resetStrip(strip);
+      }
+    });
+
+    // Ensure every strip has EDIT and RESET buttons
+    function setupStripButtons(strip) {
+      const btnContainer = strip.querySelector('.strip-buttons');
+      if (!strip.querySelector('.edit-btn')) {
+        const editBtn = document.createElement('div');
+        editBtn.textContent = "EDIT";
+        editBtn.classList.add('strip-button', 'edit-btn', 'no-print');
+        btnContainer.appendChild(editBtn);
+      }
+      if (!strip.querySelector('.reset-btn')) {
+        const resetBtn = document.createElement('div');
+        resetBtn.textContent = "RESET";
+        resetBtn.classList.add('strip-button', 'reset-btn', 'no-print');
+        btnContainer.appendChild(resetBtn);
+      }
+    }
+    setupStripButtons(initialStrip);
+  </script>
+</body>
+</html>
